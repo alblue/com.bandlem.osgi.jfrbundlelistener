@@ -1,0 +1,716 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="182" onload="init(evt)" viewBox="0 0 1200 182" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+	}
+
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+		}
+		else if (e.target.id == "unzoom") unzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	}, false)
+
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+		return;
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+		search();
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) {
+				currentSearchTerm = term;
+				search();
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (currentSearchTerm === null) return;
+		var term = currentSearchTerm;
+
+		var re = new RegExp(term, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="182.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="165" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="165" > </text>
+<g id="frames">
+<g >
+<title>org.eclipse.core.jobs (30 ms, 0.71%)</title><rect x="10.0" y="101" width="8.4" height="15.0" fill="rgb(233,179,31)" rx="2" ry="2" />
+<text  x="13.00" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ui.navigator.resources (1 ms, 0.02%)</title><rect x="1181.1" y="101" width="0.3" height="15.0" fill="rgb(242,179,40)" rx="2" ry="2" />
+<text  x="1184.09" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.predicates.edit (1 ms, 0.02%)</title><rect x="572.6" y="85" width="0.3" height="15.0" fill="rgb(235,179,33)" rx="2" ry="2" />
+<text  x="575.58" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ui.workbench (31 ms, 0.73%)</title><rect x="1181.4" y="101" width="8.6" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="1184.37" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.buildship.ui (90 ms, 2.12%)</title><rect x="662.5" y="101" width="25.0" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="665.49" y="111.5" >o..</text>
+</g>
+<g >
+<title>org.eclipse.ui (2 ms, 0.05%)</title><rect x="1189.4" y="85" width="0.6" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1192.44" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.mylyn.gerrit.ui (14 ms, 0.33%)</title><rect x="1140.7" y="85" width="3.9" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1143.73" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.epp.mpc.ui (8 ms, 0.19%)</title><rect x="572.9" y="101" width="2.2" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="575.86" y="111.5" ></text>
+</g>
+<g >
+<title>Start-Level:-Equinox-Container:-f843f085-f670-4699-8367-31e916bd7950 (1,955 ms, 46.12%)</title><rect x="18.4" y="117" width="544.2" height="15.0" fill="rgb(224,172,21)" rx="2" ry="2" />
+<text  x="21.35" y="127.5" >Start-Level:-Equinox-Container:-f843f085-f670-4699-8367-31e916bd7950</text>
+</g>
+<g >
+<title>org.eclipse.equinox.p2.core (8 ms, 0.19%)</title><rect x="572.9" y="69" width="2.2" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="575.86" y="79.5" ></text>
+</g>
+<g >
+<title>org.apache.felix.gogo.command (6 ms, 0.14%)</title><rect x="897.7" y="85" width="1.7" height="15.0" fill="rgb(254,179,54)" rx="2" ry="2" />
+<text  x="900.71" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.buildship.core (84 ms, 1.98%)</title><rect x="664.2" y="85" width="23.3" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="667.16" y="95.5" >o..</text>
+</g>
+<g >
+<title>org.eclipse.help (1 ms, 0.02%)</title><rect x="908.0" y="101" width="0.3" height="15.0" fill="rgb(238,179,36)" rx="2" ry="2" />
+<text  x="911.01" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.preferences (28 ms, 0.66%)</title><rect x="282.8" y="69" width="7.8" height="15.0" fill="rgb(242,179,40)" rx="2" ry="2" />
+<text  x="285.80" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ui.editors (1 ms, 0.02%)</title><rect x="1040.2" y="85" width="0.3" height="15.0" fill="rgb(239,179,38)" rx="2" ry="2" />
+<text  x="1043.24" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.buildship.stsmigration (2 ms, 0.05%)</title><rect x="575.1" y="101" width="0.5" height="15.0" fill="rgb(247,179,46)" rx="2" ry="2" />
+<text  x="578.09" y="111.5" ></text>
+</g>
+<g >
+<title>main (1,934 ms, 45.62%)</title><rect x="651.6" y="117" width="538.4" height="15.0" fill="rgb(247,83,46)" rx="2" ry="2" />
+<text  x="654.64" y="127.5" >main</text>
+</g>
+<g >
+<title>org.eclipse.epp.mpc.core (252 ms, 5.94%)</title><rect x="578.1" y="85" width="70.2" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="581.15" y="95.5" >org.ecl..</text>
+</g>
+<g >
+<title>org.eclipse.epp.mpc.ui (261 ms, 6.16%)</title><rect x="575.6" y="101" width="72.7" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="578.64" y="111.5" >org.ecli..</text>
+</g>
+<g >
+<title>org.eclipse.emf.common (69 ms, 1.63%)</title><rect x="864.3" y="101" width="19.2" height="15.0" fill="rgb(253,179,53)" rx="2" ry="2" />
+<text  x="867.31" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.event (1 ms, 0.02%)</title><rect x="22.2" y="101" width="0.3" height="15.0" fill="rgb(241,179,39)" rx="2" ry="2" />
+<text  x="25.25" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.app (28 ms, 0.66%)</title><rect x="275.0" y="69" width="7.8" height="15.0" fill="rgb(248,179,47)" rx="2" ry="2" />
+<text  x="278.01" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.setup.p2.edit (1 ms, 0.02%)</title><rect x="1171.1" y="85" width="0.2" height="15.0" fill="rgb(235,179,33)" rx="2" ry="2" />
+<text  x="1174.07" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.mylyn.reviews.ui (8 ms, 0.19%)</title><rect x="1142.4" y="69" width="2.2" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1145.40" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.egit.core (452 ms, 10.66%)</title><rect x="738.5" y="85" width="125.8" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="741.49" y="95.5" >org.eclipse.egi..</text>
+</g>
+<g >
+<title>org.eclipse.team.core (13 ms, 0.31%)</title><rect x="1175.0" y="101" width="3.6" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="1177.97" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.p2.ui.sdk.scheduler (5 ms, 0.12%)</title><rect x="648.9" y="101" width="1.3" height="15.0" fill="rgb(245,179,44)" rx="2" ry="2" />
+<text  x="651.85" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.mylyn.team.ui (5 ms, 0.12%)</title><rect x="650.2" y="101" width="1.4" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="653.25" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.p2.engine (1 ms, 0.02%)</title><rect x="648.3" y="101" width="0.3" height="15.0" fill="rgb(246,179,46)" rx="2" ry="2" />
+<text  x="651.30" y="111.5" ></text>
+</g>
+<g >
+<title>all (4,239 ms, 100%)</title><rect x="10.0" y="133" width="1180.0" height="15.0" fill="rgb(255,230,55)" rx="2" ry="2" />
+<text  x="13.00" y="143.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ecf.identity (8 ms, 0.19%)</title><rect x="1160.5" y="69" width="2.2" height="15.0" fill="rgb(240,179,38)" rx="2" ry="2" />
+<text  x="1163.49" y="79.5" ></text>
+</g>
+<g >
+<title>org.apache.felix.gogo.shell (9 ms, 0.21%)</title><rect x="905.5" y="85" width="2.5" height="15.0" fill="rgb(227,179,24)" rx="2" ry="2" />
+<text  x="908.51" y="95.5" ></text>
+</g>
+<g >
+<title>Worker-5 (37 ms, 0.87%)</title><rect x="562.6" y="117" width="10.3" height="15.0" fill="rgb(244,149,43)" rx="2" ry="2" />
+<text  x="565.56" y="127.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.console (58 ms, 1.37%)</title><rect x="891.9" y="101" width="16.1" height="15.0" fill="rgb(241,179,39)" rx="2" ry="2" />
+<text  x="894.87" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.core.resources (126 ms, 2.97%)</title><rect x="687.5" y="101" width="35.1" height="15.0" fill="rgb(242,179,40)" rx="2" ry="2" />
+<text  x="690.55" y="111.5" >or..</text>
+</g>
+<g >
+<title>org.eclipse.epp.mpc.core (8 ms, 0.19%)</title><rect x="572.9" y="85" width="2.2" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="575.86" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.emf.edit (3 ms, 0.07%)</title><rect x="562.6" y="101" width="0.8" height="15.0" fill="rgb(235,179,33)" rx="2" ry="2" />
+<text  x="565.56" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.core.filebuffers (1 ms, 0.02%)</title><rect x="853.2" y="69" width="0.3" height="15.0" fill="rgb(238,179,36)" rx="2" ry="2" />
+<text  x="856.18" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ui.trace (963 ms, 22.72%)</title><rect x="22.5" y="101" width="268.1" height="15.0" fill="rgb(252,179,52)" rx="2" ry="2" />
+<text  x="25.53" y="111.5" >org.eclipse.ui.trace</text>
+</g>
+<g >
+<title>org.eclipse.equinox.p2.core (3 ms, 0.07%)</title><rect x="645.8" y="69" width="0.8" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="648.79" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.base.edit (1 ms, 0.02%)</title><rect x="1173.6" y="85" width="0.3" height="15.0" fill="rgb(235,179,33)" rx="2" ry="2" />
+<text  x="1176.58" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ecf.provider.filetransfer.httpclient45 (1 ms, 0.02%)</title><rect x="1167.5" y="53" width="0.2" height="15.0" fill="rgb(235,179,33)" rx="2" ry="2" />
+<text  x="1170.45" y="63.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.security (1 ms, 0.02%)</title><rect x="864.0" y="37" width="0.3" height="15.0" fill="rgb(240,179,38)" rx="2" ry="2" />
+<text  x="867.03" y="47.5" ></text>
+</g>
+<g >
+<title>Worker-8 (275 ms, 6.49%)</title><rect x="575.1" y="117" width="76.5" height="15.0" fill="rgb(239,149,37)" rx="2" ry="2" />
+<text  x="578.09" y="127.5" >Worker-8</text>
+</g>
+<g >
+<title>org.eclipse.equinox.p2.ui (1 ms, 0.02%)</title><rect x="648.6" y="101" width="0.3" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="651.58" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ecf (10 ms, 0.24%)</title><rect x="1157.7" y="69" width="2.8" height="15.0" fill="rgb(248,179,47)" rx="2" ry="2" />
+<text  x="1160.71" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.jdt.core (306 ms, 7.22%)</title><rect x="955.1" y="85" width="85.1" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="958.06" y="95.5" >org.eclips..</text>
+</g>
+<g >
+<title>org.eclipse.oomph.setup.ui (91 ms, 2.15%)</title><rect x="1146.0" y="101" width="25.3" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1149.02" y="111.5" >o..</text>
+</g>
+<g >
+<title>org.eclipse.mylyn.context.core (10 ms, 0.24%)</title><rect x="1137.9" y="85" width="2.8" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="1140.95" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.mylyn.commons.core (1 ms, 0.02%)</title><rect x="1137.7" y="85" width="0.2" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="1140.67" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.debug.core (18 ms, 0.42%)</title><rect x="682.5" y="69" width="5.0" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="685.54" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.registry (877 ms, 20.69%)</title><rect x="30.9" y="53" width="244.1" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="33.88" y="63.5" >org.eclipse.equinox.registry</text>
+</g>
+<g >
+<title>org.eclipse.ecf.provider.filetransfer (18 ms, 0.42%)</title><rect x="1162.7" y="69" width="5.0" height="15.0" fill="rgb(241,179,40)" rx="2" ry="2" />
+<text  x="1165.72" y="79.5" ></text>
+</g>
+<g >
+<title>Framework-Event-Dispatcher:-Equinox-Container:-f843f085-f670-4699-8367-31e916bd7950 (30 ms, 0.71%)</title><rect x="10.0" y="117" width="8.4" height="15.0" fill="rgb(224,206,21)" rx="2" ry="2" />
+<text  x="13.00" y="127.5" ></text>
+</g>
+<g >
+<title>org.eclipse.egit.ui (508 ms, 11.98%)</title><rect x="722.9" y="101" width="141.4" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="725.90" y="111.5" >org.eclipse.egit.ui</text>
+</g>
+<g >
+<title>org.eclipse.oomph.setup.core (12 ms, 0.28%)</title><rect x="1167.7" y="85" width="3.4" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="1170.73" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ecf.filetransfer (1 ms, 0.02%)</title><rect x="1167.2" y="53" width="0.3" height="15.0" fill="rgb(241,179,40)" rx="2" ry="2" />
+<text  x="1170.17" y="63.5" ></text>
+</g>
+<g >
+<title>org.eclipse.team.ui (8 ms, 0.19%)</title><rect x="572.9" y="53" width="2.2" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="575.86" y="63.5" ></text>
+</g>
+<g >
+<title>org.eclipse.jsch.core (39 ms, 0.92%)</title><rect x="853.5" y="69" width="10.8" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="856.45" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.e4.ui.workbench.swt (1 ms, 0.02%)</title><rect x="722.6" y="101" width="0.3" height="15.0" fill="rgb(229,179,27)" rx="2" ry="2" />
+<text  x="725.62" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.core.net (30 ms, 0.71%)</title><rect x="856.0" y="53" width="8.3" height="15.0" fill="rgb(240,179,39)" rx="2" ry="2" />
+<text  x="858.96" y="63.5" ></text>
+</g>
+<g >
+<title>Worker-7 (8 ms, 0.19%)</title><rect x="572.9" y="117" width="2.2" height="15.0" fill="rgb(241,149,39)" rx="2" ry="2" />
+<text  x="575.86" y="127.5" ></text>
+</g>
+<g >
+<title>org.eclipse.userstorage (6 ms, 0.14%)</title><rect x="646.6" y="69" width="1.7" height="15.0" fill="rgb(248,179,47)" rx="2" ry="2" />
+<text  x="649.63" y="79.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ui.workbench.texteditor (2 ms, 0.05%)</title><rect x="1040.5" y="85" width="0.6" height="15.0" fill="rgb(241,179,39)" rx="2" ry="2" />
+<text  x="1043.52" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.equinox.common (14 ms, 0.33%)</title><rect x="18.4" y="101" width="3.8" height="15.0" fill="rgb(253,179,53)" rx="2" ry="2" />
+<text  x="21.35" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.workingsets.editor (33 ms, 0.78%)</title><rect x="563.7" y="101" width="9.2" height="15.0" fill="rgb(241,179,39)" rx="2" ry="2" />
+<text  x="566.67" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.emf.ecore (30 ms, 0.71%)</title><rect x="883.5" y="101" width="8.4" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="886.52" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.ui.navigator (4 ms, 0.09%)</title><rect x="1180.0" y="101" width="1.1" height="15.0" fill="rgb(241,179,39)" rx="2" ry="2" />
+<text  x="1182.98" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.ui (13 ms, 0.31%)</title><rect x="1171.3" y="101" width="3.7" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1174.35" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.emf.common.ui (1 ms, 0.02%)</title><rect x="1173.3" y="85" width="0.3" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1176.30" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.e4.ui.workbench (30 ms, 0.71%)</title><rect x="10.0" y="85" width="8.4" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="13.00" y="95.5" ></text>
+</g>
+<g >
+<title>org.apache.felix.scr (39 ms, 0.92%)</title><rect x="651.6" y="101" width="10.9" height="15.0" fill="rgb(243,179,41)" rx="2" ry="2" />
+<text  x="654.64" y="111.5" ></text>
+</g>
+<g >
+<title>org.eclipse.core.contenttype (883 ms, 20.83%)</title><rect x="29.2" y="69" width="245.8" height="15.0" fill="rgb(250,179,49)" rx="2" ry="2" />
+<text  x="32.21" y="79.5" >org.eclipse.core.contenttype</text>
+</g>
+<g >
+<title>org.eclipse.mylyn.tasks.ui (377 ms, 8.89%)</title><rect x="1041.1" y="101" width="104.9" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1044.07" y="111.5" >org.eclipse...</text>
+</g>
+<g >
+<title>org.eclipse.update.configurator (977 ms, 23.05%)</title><rect x="290.6" y="101" width="272.0" height="15.0" fill="rgb(241,179,39)" rx="2" ry="2" />
+<text  x="293.59" y="111.5" >org.eclipse.update.configurator</text>
+</g>
+<g >
+<title>org.eclipse.mylyn.monitor.ui (5 ms, 0.12%)</title><rect x="1144.6" y="85" width="1.4" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1147.63" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.predicates (1 ms, 0.02%)</title><rect x="572.3" y="85" width="0.3" height="15.0" fill="rgb(238,179,36)" rx="2" ry="2" />
+<text  x="575.30" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.jdt.ui (477 ms, 11.25%)</title><rect x="908.3" y="101" width="132.8" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="911.29" y="111.5" >org.eclipse.jdt.ui</text>
+</g>
+<g >
+<title>org.eclipse.core.runtime (953 ms, 22.48%)</title><rect x="25.3" y="85" width="265.3" height="15.0" fill="rgb(236,179,34)" rx="2" ry="2" />
+<text  x="28.31" y="95.5" >org.eclipse.core.runtime</text>
+</g>
+<g >
+<title>org.eclipse.ui.ide (5 ms, 0.12%)</title><rect x="1178.6" y="101" width="1.4" height="15.0" fill="rgb(245,179,44)" rx="2" ry="2" />
+<text  x="1181.59" y="111.5" ></text>
+</g>
+<g >
+<title>org.apache.felix.gogo.runtime (22 ms, 0.52%)</title><rect x="899.4" y="85" width="6.1" height="15.0" fill="rgb(236,179,34)" rx="2" ry="2" />
+<text  x="902.38" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.p2.core (65 ms, 1.53%)</title><rect x="1149.6" y="85" width="18.1" height="15.0" fill="rgb(246,179,45)" rx="2" ry="2" />
+<text  x="1152.64" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.util (4 ms, 0.09%)</title><rect x="1173.9" y="85" width="1.1" height="15.0" fill="rgb(228,179,26)" rx="2" ry="2" />
+<text  x="1176.85" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.mylyn.bugzilla.ui (4 ms, 0.09%)</title><rect x="1136.6" y="85" width="1.1" height="15.0" fill="rgb(231,179,29)" rx="2" ry="2" />
+<text  x="1139.55" y="95.5" ></text>
+</g>
+<g >
+<title>org.eclipse.oomph.setup.sync (1 ms, 0.02%)</title><rect x="563.4" y="101" width="0.3" height="15.0" fill="rgb(238,179,36)" rx="2" ry="2" />
+<text  x="566.39" y="111.5" ></text>
+</g>
+</g>
+</svg>
