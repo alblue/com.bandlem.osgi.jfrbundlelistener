@@ -1,0 +1,12 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Startup
+Bundle-SymbolicName: com.bandlem.osgi.jfrbundlelistener
+Bundle-Version: 1.0.0.qualifier
+Bundle-Vendor: Bandlem Ltd
+Automatic-Module-Name: com.bandlem.osgi.jfrbundlelistener
+Bundle-RequiredExecutionEnvironment: JavaSE-11
+Import-Package: org.osgi.framework;version="1.7.0"
+Bundle-ActivationPolicy: lazy
+Bundle-Activator: com.bandlem.osgi.jfrbundlelistener.Activator
+Main-Class: com.bandlem.osgi.jfrbundlelistener.JFRFlameGraph
