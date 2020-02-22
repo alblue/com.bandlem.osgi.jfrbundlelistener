@@ -3,7 +3,7 @@ JFRBundleListener
 
 Bundle listener that writes out Java Flight Recorder events to track startup time of bundles.
 
-For the write-up, see https://alblue.bandlem.com/2020/02/22/jfr-bundle-listener.html
+For the write-up, see https://alblue.bandlem.com/2020/02/jfr-bundle-listener.html
 
 This is derived from the talk given at
 https://alblue.bandlem.com/2016/10/eclipsecon-books.html but at which point I
