@@ -7,6 +7,7 @@ package com.bandlem.osgi.jfrbundlelistener;
 
 import org.osgi.framework.BundleEvent;
 
+import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
 import jdk.jfr.Label;
@@ -16,6 +17,7 @@ import jdk.jfr.Name;
  * Provides a JFR capable logging event for bundle startup times.
  * @author Alex Blewitt
  */
+@Category("OGSi")
 @Description("Represents bundle start up times")
 @Label("Bundle Event")
 public class JFRBundleEvent extends Event {
