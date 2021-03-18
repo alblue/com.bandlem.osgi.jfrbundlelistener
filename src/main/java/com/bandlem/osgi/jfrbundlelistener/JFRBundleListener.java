@@ -32,7 +32,7 @@ import org.osgi.framework.SynchronousBundleListener;
 public class JFRBundleListener implements SynchronousBundleListener {
 
 	static final int MAX_BUNDLES = Integer.getInteger(JFRBundleListener.class.getName() + ".max", 1000);
-	static JFRBundleEvent[] events = new JFRBundleEvent[MAX_BUNDLES];
+	final JFRBundleEvent[] events = new JFRBundleEvent[MAX_BUNDLES];
 
 	/**
 	 * Called when a bundle changes state.
