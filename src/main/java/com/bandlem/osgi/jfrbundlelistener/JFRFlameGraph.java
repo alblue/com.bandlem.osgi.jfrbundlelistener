@@ -13,9 +13,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Iterator;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.SortedSet;
-import java.util.Stack;
 import java.util.TreeSet;
 
 import jdk.jfr.consumer.RecordedEvent;
@@ -95,13 +95,11 @@ public class JFRFlameGraph {
 	 * @param out   the output to write to
 	 * @throws IOException if an I/O error occurs during writing
 	 */
-	private static void write(Stack<FlameEvent> stack, Writer out) throws IOException {
+	private static void write(Deque<FlameEvent> stack, Writer out) throws IOException {
 		FlameEvent top = stack.peek();
 		Duration duration = top.getDuration();
-		Iterator<FlameEvent> iterator = stack.iterator();
 		StringBuilder builder = new StringBuilder(top.getThreadName());
-		while (iterator.hasNext()) {
-			FlameEvent flameEvent = (FlameEvent) iterator.next();
+		for (FlameEvent flameEvent : stack) {
 			builder.append(';');
 			builder.append(flameEvent.getMessage());
 		}
@@ -120,7 +118,7 @@ public class JFRFlameGraph {
 	 * @param out    the writer to write to
 	 * @throws IOException if an I/O error occurs during writing
 	 */
-	private static void writeBefore(Stack<FlameEvent> stack, Instant before, Writer out) throws IOException {
+	private static void writeBefore(Deque<FlameEvent> stack, Instant before, Writer out) throws IOException {
 		if (stack.isEmpty()) {
 			return;
 		}
@@ -141,10 +139,8 @@ public class JFRFlameGraph {
 	 */
 	private static void writeFlameEvents(SortedSet<FlameEvent> events, File outputFile) throws IOException {
 		try (Writer out = new FileWriter(outputFile)) {
-			Stack<FlameEvent> stack = new Stack<>();
-			Iterator<FlameEvent> it = events.iterator();
-			while (it.hasNext()) {
-				FlameEvent event = (FlameEvent) it.next();
+			Deque<FlameEvent> stack = new ArrayDeque<>();
+			for (FlameEvent event :  events) {
 				writeBefore(stack, event.getStartTime(), out);
 				if (!stack.isEmpty()) {
 					stack.peek().adjust(event.getDuration());
