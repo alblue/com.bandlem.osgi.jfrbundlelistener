@@ -13,17 +13,19 @@ import org.osgi.framework.BundleContext;
  * to generate JFR events. Registers {@link JFRBundleListener} to subscribe to
  * OSGi bundle listener events synchronously (so that the correct timing can be
  * determined).
- * 
+ *
  * @author Alex Blewitt
  */
 public class Activator implements BundleActivator {
+	private final JFRBundleListener listener = new JFRBundleListener();
 
 	@Override
 	public void start(BundleContext context) throws Exception {
-		context.addBundleListener(new JFRBundleListener());
+		context.addBundleListener(listener);
 	}
 
 	@Override
 	public void stop(BundleContext context) throws Exception {
+		context.removeBundleListener(listener);
 	}
 }

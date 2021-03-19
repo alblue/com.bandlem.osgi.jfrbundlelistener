@@ -13,10 +13,10 @@ import jdk.jfr.consumer.RecordedEvent;
 /**
  * Wraps a {@link RecordedEvent} so that durations can be adjusted for nested
  * startup events.
- * 
+ *
  * Provides delegated access to the underlying event. Contains an associated
  * message which can be used for displaying on a flame graph.
- * 
+ *
  * @author Alex Blewitt
  */
 public class FlameEvent implements Comparable<FlameEvent> {
@@ -30,7 +30,7 @@ public class FlameEvent implements Comparable<FlameEvent> {
 
 	/**
 	 * Create a new FlameEvent with a wrapped RecordedEvent and message.
-	 * 
+	 *
 	 * @param event   the JFR recorded event to wrap
 	 * @param message the message to display in a flame graph
 	 */
@@ -41,11 +41,11 @@ public class FlameEvent implements Comparable<FlameEvent> {
 
 	/**
 	 * Adjust the duration reported by the given amount.
-	 * 
+	 *
 	 * If event A subsumes event B, and event B takes 1s while event A takes 1.5s,
 	 * we want to report A's time as 0.5s. So when processing nested events, we
 	 * adjust A-&gt;B's time by -1s, so that A's total time is correct.
-	 * 
+	 *
 	 * @param duration the duration to adjust by
 	 */
 	public void adjust(Duration duration) {
@@ -57,10 +57,37 @@ public class FlameEvent implements Comparable<FlameEvent> {
 		return getStartTime().compareTo(other.getStartTime());
 	}
 
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		FlameEvent other = (FlameEvent) obj;
+		if (adjustment == null) {
+			if (other.adjustment != null)
+				return false;
+		} else if (!adjustment.equals(other.adjustment))
+			return false;
+		if (event == null) {
+			if (other.event != null)
+				return false;
+		} else if (!event.equals(other.event))
+			return false;
+		if (message == null) {
+			if (other.message != null)
+				return false;
+		} else if (!message.equals(other.message))
+			return false;
+		return true;
+	}
+
 	/**
 	 * Returns the adjusted duration for the event, or the event's whole duration if
 	 * the adjustment is zero.
-	 * 
+	 *
 	 * @return the adjusted duration
 	 */
 	public Duration getDuration() {
@@ -70,7 +97,7 @@ public class FlameEvent implements Comparable<FlameEvent> {
 
 	/**
 	 * Delegates to {@link RecordedEvent#getEndTime}
-	 * 
+	 *
 	 * @return the end time of the event
 	 */
 	public Instant getEndTime() {
@@ -83,7 +110,7 @@ public class FlameEvent implements Comparable<FlameEvent> {
 
 	/**
 	 * Delegates to {@link RecordedEvent#getStartTime}
-	 * 
+	 *
 	 * @return the start time of the event
 	 */
 	public Instant getStartTime() {
@@ -92,10 +119,20 @@ public class FlameEvent implements Comparable<FlameEvent> {
 
 	/**
 	 * Delegates to {@link RecordedEvent#getThread}
-	 * 
+	 *
 	 * @return the thread name as reported by the stack trace
 	 */
 	public String getThreadName() {
 		return event.getThread().getJavaName().replace(' ', '-');
+	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((adjustment == null) ? 0 : adjustment.hashCode());
+		result = prime * result + ((event == null) ? 0 : event.hashCode());
+		result = prime * result + ((message == null) ? 0 : message.hashCode());
+		return result;
 	}
 }

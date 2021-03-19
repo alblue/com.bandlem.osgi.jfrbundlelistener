@@ -26,13 +26,13 @@ import jdk.jfr.consumer.RecordingFile;
  * Gregg's FlameGraph software.
  *
  * Usage: java JFRFlameGraph [infile] [outfile]
- * 
+ *
  * Defaults to stdin and stdout if not specified.
- * 
+ *
  * The post-processing step can be executed by cloning:
- * 
+ *
  * https://github.com/brendangregg/FlameGraph
- * 
+ *
  * followed by executing
  * <pre>
  * ./flamegraph.pl --countname ms --hash &lt; [outfile].txt &gt; [outfile].svg
@@ -42,7 +42,7 @@ import jdk.jfr.consumer.RecordingFile;
 public class JFRFlameGraph {
 	/**
 	 * Given an input JFR file, writes a consolidated FlameGraph stack trace file.
-	 * 
+	 *
 	 * @param args [infile] [outfile]
 	 * @throws IOException if an I/O error occurs during processing
 	 */
@@ -56,10 +56,10 @@ public class JFRFlameGraph {
 	 * Process a flight recording, looking for {@link JFRBundleEvent} events,
 	 * extracting the {@code Bundle-SymbolicName} and returning a set of
 	 * {@link FlameEvent}.
-	 * 
+	 *
 	 * The returned FlameEvent objects are sorted by start time, so the earliest
 	 * event from the set will be the one with the lowest start time.
-	 * 
+	 *
 	 * @param path the path of the recording
 	 * @return the set of the {@link FlameEvent} objects.
 	 * @throws IOException if an I/O error occurs during reading
@@ -84,13 +84,13 @@ public class JFRFlameGraph {
 	/**
 	 * Given a stack of {@link FlameEvent} objects, write out a single line to the
 	 * output with a concatenated list of messages and concluding with the line.
-	 * 
+	 *
 	 * The output of this will look like:
-	 * 
+	 *
 	 * main;msg1;msg2;msg3 1234
-	 * 
+	 *
 	 * This output can be consumed by FlameGraph to process into a flame graph
-	 * 
+	 *
 	 * @param stack the stack of FlameEvent objects
 	 * @param out   the output to write to
 	 * @throws IOException if an I/O error occurs during writing
@@ -112,7 +112,7 @@ public class JFRFlameGraph {
 	/**
 	 * Write all stack elements that occurred before a particular time, so that we
 	 * have a moving cut-off filter of events.
-	 * 
+	 *
 	 * @param stack  the stack of FlameEvent objects
 	 * @param before the cut-off time
 	 * @param out    the writer to write to
@@ -132,7 +132,7 @@ public class JFRFlameGraph {
 	/**
 	 * Given a sorted set of FlameEvent objects, write them out to the output file
 	 * on a line by line basis.
-	 * 
+	 *
 	 * @param events     all flame events
 	 * @param outputFile the output file to write to
 	 * @throws IOException if an I/O error occurs during writing
