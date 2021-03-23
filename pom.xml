@@ -1,14 +1,40 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.bandlem.osgi.jfrbundlelistener</groupId>
 	<artifactId>JFRBundleListener</artifactId>
 	<version>1.0.0-SNAPSHOT</version>
+	<name>JFR Bundle Listener</name>
+	<description>A utility to allow dumping events to track bundle start time</description>
+	<url>https://github.com/alblue/com.bandlem.osgi.jfrbundlelistener</url>
+	<licenses>
+		<license>
+			<name>MIT</name>
+			<url>https://github.com/alblue/com.bandlem.osgi.jfrbundlelistener/blob/master/LICENSE.txt</url>
+		</license>
+	</licenses>
+	<developers>
+		<developer>
+			<id>alblue</id>
+			<name>Alex Blewitt</name>
+			<email>alex.blewitt@gmail.com</email>
+			<url>https://alblue.bandlem.com</url>
+			<properties>
+				<gravatar>https://gravatar.com/avatar/b3d3a2cce932eca144b8c13a63966404</gravatar>
+				<twitter>https://twitter.com/alblue</twitter>
+			</properties>
+		</developer>
+	</developers>
+	<scm>
+		<connection>scm:git:https://github.com/alblue/com.bandlem.osgi.jfrbundlelistener.git</connection>
+		<developerConnection>scm:git:ssh://git@github.com/alblue/com.bandlem.osgi.jfrbundlelistener.git</developerConnection>
+		<tag>v${project.version}</tag>
+		<url>https://github.com/alblue/com.bandlem.osgi.jfrbundlelistener</url>
+	</scm>
 	<properties>
 		<project.build.sourceEncoding>utf-8</project.build.sourceEncoding>
-		<project.reporting.outputEncoding>utf-8
-		</project.reporting.outputEncoding>
+		<project.reporting.outputEncoding>utf-8</project.reporting.outputEncoding>
+		<maven.compiler.release>11</maven.compiler.release>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -23,15 +49,12 @@
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.8.0</version>
-				<configuration>
-					<release>11</release>
-				</configuration>
+				<version>3.8.1</version>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.felix</groupId>
 				<artifactId>maven-bundle-plugin</artifactId>
-				<version>4.2.1</version>
+				<version>5.1.1</version>
 				<executions>
 					<execution>
 						<id>bundle-manifest</id>
@@ -44,12 +67,38 @@
 			</plugin>
 			<plugin>
 				<artifactId>maven-jar-plugin</artifactId>
-				<version>2.4</version>
+				<version>3.2.0</version>
 				<configuration>
 					<archive>
 						<manifestFile>META-INF/MANIFEST.MF</manifestFile>
 					</archive>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<version>2.2.1</version>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<goals>
+							<goal>jar-no-fork</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>2.9.1</version>
+				<executions>
+					<execution>
+						<id>attach-javadocs</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>
